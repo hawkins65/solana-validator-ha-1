@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -44,4 +44,4 @@ USER appuser
 EXPOSE 9090
 
 # Default command (can be overridden)
-CMD ["./bin/solana-validator-ha", "run"] 
+CMD ["./bin/solana-validator-ha", "run"]

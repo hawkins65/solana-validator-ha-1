@@ -105,6 +105,9 @@ func TestValidate(t *testing.T) {
 		},
 	}
 
+	// Set defaults before validation (as done in Initialize)
+	cfg.setDefaults()
+
 	err := cfg.validate()
 	assert.NoError(t, err)
 

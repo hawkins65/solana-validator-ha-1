@@ -12,12 +12,6 @@ if ! docker info > /dev/null 2>&1; then
     exit 1
 fi
 
-# Check if docker-compose is available
-if ! command -v docker-compose &> /dev/null; then
-    echo "❌ docker-compose is not installed. Please install it and try again."
-    exit 1
-fi
-
 echo "📦 Building and starting mock server..."
 cd "$(dirname "$0")"
 
