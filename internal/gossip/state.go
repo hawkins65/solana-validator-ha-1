@@ -249,15 +249,33 @@ func (p *State) isNodeActiveAndVoting(node solanagorpc.GetClusterNodesResult) bo
 		return true // forgive rpc error and assume innocence lest we trigger a false-positive failover
 	}
 
-	// if the node is in the delinquent list - it is not voting
+	// if the node is in the delinquent list - it is not voting, but forgive delinquency due to low balance
+	// because failing over in this case definitely won't fix things anyway
 	for _, delinquentVoteAccount := range voteAccounts.Delinquent {
 		// not us - keep looking
 		if !delinquentVoteAccount.NodePubkey.Equals(node.Pubkey) {
 			continue
 		}
 
+		// ok we might be legit delinquent but let's check if the node's identity balance is below the rent-exempt balance
+		balance, err := p.clusterRPC.GetBalance(context.Background(), delinquentVoteAccount.NodePubkey)
+		if err != nil {
+			p.logger.Error("failed to get balance", "error", err)
+			return true // forgive rpc error and assume innocence lest we trigger a false-positive failover
+		}
+		// rent exempt min is 890880 lamports
+		if balance.Value <= 890880 {
+			p.logger.Error("node is delinquent from balance being below rent-exempt minimum - assuming still active to not trigger a false-positive failover - FIX balance pronto!",
+				"gossip_address", *node.Gossip,
+				"pubkey", node.Pubkey.String(),
+				"current_slot", currentSlot,
+				"balance", balance.Value,
+			)
+			return true
+		}
+
 		// ohhh shit! we're delinquent - snitch on this guy!
-		p.logger.Warn("node is delinquent - not voting",
+		p.logger.Debug("node is delinquent - not voting",
 			"gossip_address", *node.Gossip,
 			"pubkey", node.Pubkey.String(),
 			"current_slot", currentSlot,

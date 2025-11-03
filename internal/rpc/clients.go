@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
 )
 
@@ -126,6 +127,20 @@ func (c *Client) GetVoteAccounts(ctx context.Context) (*rpc.GetVoteAccountsResul
 			return client.GetVoteAccounts(ctx, &rpc.GetVoteAccountsOpts{
 				Commitment: rpc.CommitmentProcessed,
 			})
+		},
+	})
+}
+
+// GetBalance gets the balance from the first working RPC client
+func (c *Client) GetBalance(ctx context.Context, pubkey solana.PublicKey) (*rpc.GetBalanceResult, error) {
+	return executeWithRetry(c, ctx, rpcOperation[*rpc.GetBalanceResult]{
+		name: "GetBalance",
+		execute: func(client *rpc.Client, ctx context.Context) (*rpc.GetBalanceResult, error) {
+			result, err := client.GetBalance(ctx, pubkey, rpc.CommitmentProcessed)
+			if err != nil {
+				return nil, err
+			}
+			return result, nil
 		},
 	})
 }
