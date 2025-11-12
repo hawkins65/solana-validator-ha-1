@@ -276,7 +276,7 @@ func (p *State) isNodeActiveAndVoting(node solanagorpc.GetClusterNodesResult) bo
 		}
 
 		// ohhh shit! we're delinquent - snitch on this guy!
-		p.logger.Debug("node is delinquent - not voting",
+		p.logger.Error("node is delinquent - not voting",
 			"gossip_address", *node.Gossip,
 			"pubkey", node.Pubkey.String(),
 			"current_slot", currentSlot,
