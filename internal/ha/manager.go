@@ -111,7 +111,7 @@ func (m *Manager) initialize() error {
 	}
 
 	// set global log prefix to pass everywhere
-	m.logPrefix = fmt.Sprintf("%s %v", m.cfg.Validator.Name, publicIP)
+	m.logPrefix = m.cfg.Validator.Name
 	m.logger = log.WithPrefix(fmt.Sprintf("[%s ha_manager]", m.logPrefix))
 
 	// peers config file must not declare ourselves
