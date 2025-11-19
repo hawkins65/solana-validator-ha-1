@@ -10,7 +10,7 @@ Automatic failover resulting from loss of `active (voting)` leader.
 
 ![primary-lost](demo/e2e/primary.gif)
 
-**`backup`** detects loss of leader and becomes `active`
+**`backup (passive)`** detects loss of leader and becomes `active`
 
 ![backup-active](demo/e2e/backup.gif)
 
