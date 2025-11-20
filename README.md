@@ -2,6 +2,8 @@
 
 A gossip-based high availability (HA) manager for Solana validators.
 
+![solana-validator-ha](demo/e2e/preview.png)
+
 ## Demo
 
 Automatic failover resulting from loss of `active (voting)` leader.
