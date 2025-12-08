@@ -59,16 +59,20 @@ A command to run to assume a `passive` (non-voting) - a.k.a _Seppukku_. This is 
       #...
       failover:
        passive:
-         # ⚠️ Everyone's setup is different, but this command should make damn sure the validator goes passive.
+         # ⚠️ Everyone's setup is different, but this command should make damn sure 
+         # ⚠️ the validator goes passive.
          # ⚠️ If set-identity fails, restart/stop the validator service, 
          # ⚠️ or pull the plug, or call your mum crying for help.
-         # ⚠️ Do **whatever** you need to ensure this validator doesn't come back as active
+         # ⚠️ All best are off, do **WHATEVER** is necessary to ensure this validator 
+         # ⚠️ doesn't come back as active
          command: "seppukku.sh" # user-supplied command
          args: [
            "--passive-identity-file", "{{ .PassiveIdentityKeypairFile }}",
          ]
       #...
    ```
+
+Note that `post-passive` hooks depend on the passive command succeeding to safeguard against false-positives.
 
 ## Installation
 
