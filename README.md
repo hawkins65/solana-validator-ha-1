@@ -53,15 +53,16 @@ A command to run for a node to assume the `active` role. This is simply a refere
 
 #### 2. 🔴 Passive command
 
-A command to run to assume a `passive` role (a.k.a _Seppukku_). This is simply a reference to an **idempotent** user-supplied command that ensures the validator is set to `passive`. An validator that detects itself as disconnected from the Solana network will call this command to ensure it is `passive`. Operators may find it safest to configure validators to always start with a `passive` identity so that this command simply restarts the validator service and waits for it to report healthy. Something along the lines of:
+A command to run to assume a `passive` (non-voting) - a.k.a _Seppukku_. This is simply a reference to an **idempotent** user-supplied command that ensures the validator is set to `passive`. A validator that detects itself as disconnected from the Solana network will call this command to ensure it is `passive`. See [example-scripts/ha-set-role.sh](example-scripts/ha-set-role.sh) for inspiration on a script that handles role transitions. Operators may find it safest to configure validators to **always** start with a `passive` identity so that this command simply restarts the validator service and waits for it to report healthy. Something along the lines of:
 
    ```yaml
       #...
       failover:
        passive:
          # ⚠️ Everyone's setup is different, but this command should make damn sure the validator goes passive.
-         # ⚠️ If set-identity fails, restart/stop the validator service, or pull the plug, or call your mum crying for help.
-         # ⚠️ Do whatever you need to ensure this validator doesn't come back as active
+         # ⚠️ If set-identity fails, restart/stop the validator service, 
+         # ⚠️ or pull the plug, or call your mum crying for help.
+         # ⚠️ Do **whatever** you need to ensure this validator doesn't come back as active
          command: "seppukku.sh" # user-supplied command
          args: [
            "--passive-identity-file", "{{ .PassiveIdentityKeypairFile }}",
@@ -220,7 +221,7 @@ cluster:
 
 ### Failover Configuration
 
-See [example-scripts/ha-set-role.sh](example-scripts/ha-set-role.sh) for an example failover script to set role `active|passive`.
+See [example-scripts/ha-set-role.sh](example-scripts/ha-set-role.sh) for an example failover script to set role `active|passive`).
 
 ```yaml
 # failover
