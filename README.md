@@ -1,6 +1,6 @@
 # solana-validator-ha
 
-A gossip-based high availability (HA) manager for Solana validators.
+A gossip-based high availability (HA) manager for Solana validators. This tool helps automate *unexpected* failovers due to `<insert one of endless reasons>`. To automate *planned* failovers, see [solana-validator-failover](https://github.com/SOL-Strategies/solana-validator-failover)
 
 ![solana-validator-ha](demo/e2e/preview.png)
 
