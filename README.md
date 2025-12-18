@@ -183,10 +183,17 @@ prometheus:
 
   # port
   # required: false
-  # default: 9099
+  # default: 9090
   # description:
   #   Port to listen on and serve metrics on /metrics endpoint
-  port: 9099
+  port: 9090
+
+  # health_check_port
+  # required: false
+  # default: 9091
+  # description:
+  #   Port to listen on and serve health check on /health endpoint
+  health_check_port: 9091
 
   # static_labels
   # required: false
@@ -413,7 +420,7 @@ make test
 
 ## Monitoring & Metrics
 
-The application exposes Prometheus metrics on the configured port (default: 9090):
+The application exposes Prometheus metrics on the configured port (default: 9090) and a health check endpoint on a separate configurable port (default: 9091):
 
 ### Core Metrics
 - **`solana_validator_ha_metadata`**: Validator metadata with role and status labels
@@ -429,8 +436,8 @@ The application exposes Prometheus metrics on the configured port (default: 9090
 - Plus any configured static labels
 
 ### Health Endpoints
-- **`/metrics`**: Prometheus metrics
-- **`/health`**: Basic health check
+- **`/metrics`**: Prometheus metrics (on `prometheus.port`, default: 9090)
+- **`/health`**: Basic health check (on `prometheus.health_check_port`, default: 9091)
 
 ## License
 
