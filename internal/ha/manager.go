@@ -135,6 +135,9 @@ func (m *Manager) initialize() error {
 		"active_pubkey", m.cfg.Validator.Identities.ActiveKeyPair.PublicKey().String(),
 		"passive_pubkey", m.cfg.Validator.Identities.PassiveKeyPair.PublicKey().String(),
 		"peers", m.cfg.Failover.Peers.String(),
+		"failover_dry_run", m.cfg.Failover.DryRun,
+		"prometheus_port", m.cfg.Prometheus.Port,
+		"health_check_port", m.cfg.Prometheus.HealthCheckPort,
 	)
 
 	// create gossip state
@@ -179,7 +182,7 @@ func (m *Manager) startMetricsServer() {
 			w.Write([]byte("healthy"))
 		})
 
-		port := strconv.Itoa(m.cfg.Prometheus.Port + 1) // Use next port for health check
+		port := strconv.Itoa(m.cfg.Prometheus.HealthCheckPort)
 		healthServer := &http.Server{
 			Addr:    ":" + port,
 			Handler: mux,
