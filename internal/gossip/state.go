@@ -206,18 +206,18 @@ func (p *State) Refresh() {
 
 		// warn if peer was in the old state but is now missing
 		if p.HasIP(ip) {
-			p.logger.Warn("peer lost from gossip", "name", name, "ip", ip)
+			p.logger.Warn("peer lost", "name", name, "ip", ip)
 			continue
 		}
 
 		// warn if it is the first time we've seen this peer missing from gossip
 		if !slices.Contains(p.missingGossipIPs, ip) {
-			p.logger.Warn("peer not found in gossip", "name", name, "ip", ip)
+			p.logger.Warn("peer not found", "name", name, "ip", ip)
 			continue
 		}
 
 		// peer _still_ missing from gossip - debug
-		p.logger.Debug("peer still missing from gossip", "name", name, "ip", ip)
+		p.logger.Debug("peer still missing", "name", name, "ip", ip)
 	}
 
 	// update state
