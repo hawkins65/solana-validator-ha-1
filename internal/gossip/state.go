@@ -174,7 +174,7 @@ func (p *State) Refresh() {
 		// tell us what we found
 		// state didn't have this peer last time but now it does - so we need to log that
 		if !p.HasIP(peerState.IP) {
-			p.logger.Info("peer discovered in gossip",
+			p.logger.Info("peer found",
 				"name", peerState.Name,
 				"ip", peerState.IP,
 				"pubkey", peerState.Pubkey,
