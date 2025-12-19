@@ -40,13 +40,15 @@ func Run(opts RunOptions) error {
 	runMsg := fmt.Sprintf("%s %s %s", envString, opts.Command, strings.Join(opts.Args, " "))
 	runMsg = strings.TrimSpace(runMsg)
 
-	logger.Info(runMsg)
+	logger.Info(runMsg, "dry_run", opts.DryRun)
 
+	// if dry run, skip command execution
 	if opts.DryRun {
-		logger.Debug("command completed successfully - dry run")
+		logger.Debug("command execution skipped - dry run")
 		return nil
 	}
 
+	// execute command for realsies
 	cmd := exec.Command(opts.Command, opts.Args...)
 
 	// Set environment variables if provided

@@ -85,10 +85,6 @@ func (h *Hook) Run(opts HookRunOptions) error {
 	}
 	loggerArgs = append(loggerArgs, opts.LoggerArgs...)
 
-	if opts.DryRun {
-		return nil
-	}
-
 	return command.Run(command.RunOptions{
 		Name:         fmt.Sprintf("%s-hook %s", opts.HookType, h.Name),
 		Command:      h.Command,
