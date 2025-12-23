@@ -14,6 +14,7 @@ import (
 	"github.com/sol-strategies/solana-validator-ha/internal/config"
 	"github.com/sol-strategies/solana-validator-ha/internal/constants"
 	"github.com/sol-strategies/solana-validator-ha/internal/gossip"
+	"github.com/sol-strategies/solana-validator-ha/internal/notify"
 	"github.com/sol-strategies/solana-validator-ha/internal/prometheus"
 	"github.com/sol-strategies/solana-validator-ha/internal/rpc"
 )
@@ -42,9 +43,13 @@ type Manager struct {
 	gossipState     *gossip.State
 	getPublicIPFunc func() (string, error)
 	localRPC        *rpc.Client
+	notifyManager   *notify.Manager
 	peerCount       int
 	initialized     bool
 	logPrefix       string
+	// State tracking for notification deduplication
+	lastHealthy     bool
+	lastInGossip    bool
 }
 
 // NewManager creates a new HA manager from options
@@ -62,14 +67,16 @@ func NewManager(opts NewManagerOptions) *Manager {
 	})
 
 	manager := &Manager{
-		cfg:       opts.Cfg,
-		metrics:   metrics,
-		cache:     cache,
-		logger:    log.WithPrefix(fmt.Sprintf("[%s ha_manager]", opts.Cfg.Validator.Name)),
-		localRPC:  rpc.NewClient(opts.Cfg.Validator.Name, opts.Cfg.Validator.RPCURL),
-		ctx:       ctx,
-		cancel:    cancel,
-		peerCount: len(opts.Cfg.Failover.Peers),
+		cfg:          opts.Cfg,
+		metrics:      metrics,
+		cache:        cache,
+		logger:       log.WithPrefix(fmt.Sprintf("[%s ha_manager]", opts.Cfg.Validator.Name)),
+		localRPC:     rpc.NewClient(opts.Cfg.Validator.Name, opts.Cfg.Validator.RPCURL),
+		ctx:          ctx,
+		cancel:       cancel,
+		peerCount:    len(opts.Cfg.Failover.Peers),
+		lastHealthy:  true,  // Assume healthy on start
+		lastInGossip: false, // Will be updated after first gossip refresh
 	}
 
 	if opts.GetPublicIPFunc != nil {
@@ -140,14 +147,84 @@ func (m *Manager) initialize() error {
 		"health_check_port", m.cfg.Prometheus.HealthCheckPort,
 	)
 
-	// create gossip state
+	// initialize notification manager first (so gossip callbacks can use it)
+	if m.cfg.Notifications.HasAnyEnabled() {
+		m.notifyManager = notify.NewManager(notify.ManagerOptions{
+			Config:        &m.cfg.Notifications,
+			ValidatorName: m.cfg.Validator.Name,
+			PublicIP:      publicIP,
+			Cluster:       m.cfg.Cluster.Name,
+		})
+	}
+
+	// create gossip state with notification callbacks
 	m.logger.Debug("creating gossip state")
-	m.gossipState = gossip.NewState(gossip.Options{
+	gossipOpts := gossip.Options{
 		ClusterRPC:   rpc.NewClient(m.logPrefix, m.cfg.Cluster.RPCURLs...),
 		ActivePubkey: m.cfg.Validator.Identities.ActiveKeyPair.PublicKey().String(),
 		ConfigPeers:  m.cfg.Failover.Peers,
 		LogPrefix:    m.logPrefix,
-	})
+	}
+
+	// Set up notification callbacks if notifications are enabled
+	if m.notifyManager != nil {
+		gossipOpts.OnPeerDiscovered = func(name, ip, pubkey string) {
+			m.notifyManager.NotifyAsync(notify.Event{
+				Type:          notify.EventPeerDiscovered,
+				Severity:      notify.SeverityInfo,
+				ValidatorName: m.cfg.Validator.Name,
+				PublicIP:      m.peerSelf.IP,
+				Cluster:       m.cfg.Cluster.Name,
+				Details: map[string]string{
+					"peer_name":   name,
+					"peer_ip":     ip,
+					"peer_pubkey": pubkey,
+				},
+			})
+		}
+		gossipOpts.OnPeerLost = func(name, ip string) {
+			m.notifyManager.NotifyAsync(notify.Event{
+				Type:          notify.EventPeerLost,
+				Severity:      notify.SeverityError,
+				ValidatorName: m.cfg.Validator.Name,
+				PublicIP:      m.peerSelf.IP,
+				Cluster:       m.cfg.Cluster.Name,
+				Details: map[string]string{
+					"peer_name": name,
+					"peer_ip":   ip,
+				},
+			})
+		}
+		gossipOpts.OnDelinquent = func(pubkey, gossipAddr string) {
+			m.notifyManager.NotifyAsync(notify.Event{
+				Type:          notify.EventDelinquent,
+				Severity:      notify.SeverityCritical,
+				ValidatorName: m.cfg.Validator.Name,
+				PublicIP:      m.peerSelf.IP,
+				Cluster:       m.cfg.Cluster.Name,
+				ActivePubkey:  pubkey,
+				Message:       "Active validator is delinquent - not voting!",
+				Details: map[string]string{
+					"gossip_address": gossipAddr,
+				},
+			})
+		}
+	}
+
+	m.gossipState = gossip.NewState(gossipOpts)
+
+	// send startup notification
+	if m.notifyManager != nil {
+		m.notifyManager.NotifyAsync(notify.Event{
+			Type:          notify.EventStartup,
+			Severity:      notify.SeverityInfo,
+			ValidatorName: m.cfg.Validator.Name,
+			PublicIP:      publicIP,
+			Cluster:       m.cfg.Cluster.Name,
+			ActivePubkey:  m.cfg.Validator.Identities.ActiveKeyPair.PublicKey().String(),
+			PassivePubkey: m.cfg.Validator.Identities.PassiveKeyPair.PublicKey().String(),
+		})
+	}
 
 	m.logger.Debug("initialized")
 	m.initialized = true
@@ -343,7 +420,21 @@ func (m *Manager) ensureHAState() {
 func (m *Manager) ensurePassive() {
 	var err error
 	passivePubkey := m.cfg.Validator.Identities.PassiveKeyPair.PublicKey().String()
+	activePubkey := m.cfg.Validator.Identities.ActiveKeyPair.PublicKey().String()
 	m.logger.Info("becoming passive", "pubkey", passivePubkey)
+
+	// Send becoming passive notification
+	if m.notifyManager != nil {
+		m.notifyManager.NotifyAsync(notify.Event{
+			Type:          notify.EventBecomingPassive,
+			Severity:      notify.SeverityWarning,
+			ValidatorName: m.cfg.Validator.Name,
+			PublicIP:      m.peerSelf.IP,
+			Cluster:       m.cfg.Cluster.Name,
+			ActivePubkey:  activePubkey,
+			PassivePubkey: passivePubkey,
+		})
+	}
 
 	// Update failover status in cache
 	state := m.cache.GetState()
@@ -420,6 +511,19 @@ func (m *Manager) ensurePassive() {
 
 	// we are passive by local rpc and in gossip
 	m.logger.Info("we are confirmed to be passive", "passive_pubkey", passivePubkey)
+
+	// Send became passive notification
+	if m.notifyManager != nil {
+		m.notifyManager.NotifyAsync(notify.Event{
+			Type:          notify.EventBecamePassive,
+			Severity:      notify.SeverityInfo,
+			ValidatorName: m.cfg.Validator.Name,
+			PublicIP:      m.peerSelf.IP,
+			Cluster:       m.cfg.Cluster.Name,
+			ActivePubkey:  activePubkey,
+			PassivePubkey: passivePubkey,
+		})
+	}
 }
 
 // ensureActive makes the node active - this should be idempotent in setting the  active role
@@ -428,7 +532,22 @@ func (m *Manager) ensurePassive() {
 func (m *Manager) ensureActive() {
 	var err error
 	activePubkey := m.cfg.Validator.Identities.ActiveKeyPair.PublicKey().String()
+	passivePubkey := m.cfg.Validator.Identities.PassiveKeyPair.PublicKey().String()
 	m.logger.Info("becoming active", "pubkey", activePubkey)
+
+	// Send becoming active notification
+	if m.notifyManager != nil {
+		m.notifyManager.NotifyAsync(notify.Event{
+			Type:          notify.EventBecomingActive,
+			Severity:      notify.SeverityCritical,
+			ValidatorName: m.cfg.Validator.Name,
+			PublicIP:      m.peerSelf.IP,
+			Cluster:       m.cfg.Cluster.Name,
+			ActivePubkey:  activePubkey,
+			PassivePubkey: passivePubkey,
+			Message:       "Failover triggered - validator becoming active",
+		})
+	}
 
 	// Update failover status in cache
 	state := m.cache.GetState()
@@ -487,6 +606,19 @@ func (m *Manager) ensureActive() {
 	}
 
 	m.logger.Info("we are confirmed to be active", "active_pubkey", activePubkey)
+
+	// Send became active notification
+	if m.notifyManager != nil {
+		m.notifyManager.NotifyAsync(notify.Event{
+			Type:          notify.EventBecameActive,
+			Severity:      notify.SeverityInfo,
+			ValidatorName: m.cfg.Validator.Name,
+			PublicIP:      m.peerSelf.IP,
+			Cluster:       m.cfg.Cluster.Name,
+			ActivePubkey:  activePubkey,
+			PassivePubkey: passivePubkey,
+		})
+	}
 }
 
 // isSelfHealthy checks if the validator is healthy by calling the local RPC client
@@ -502,6 +634,33 @@ func (m *Manager) isSelfHealthy() (isHealthy bool) {
 
 	if !isHealthy {
 		m.logger.Warn("this node is unhealthy", "status", healthStatus)
+
+		// Send health unhealthy notification (only if state changed)
+		if m.lastHealthy && m.notifyManager != nil {
+			m.notifyManager.NotifyAsync(notify.Event{
+				Type:          notify.EventHealthUnhealthy,
+				Severity:      notify.SeverityError,
+				ValidatorName: m.cfg.Validator.Name,
+				PublicIP:      m.peerSelf.IP,
+				Cluster:       m.cfg.Cluster.Name,
+				Details: map[string]string{
+					"health_status": string(healthStatus),
+				},
+			})
+		}
+		m.lastHealthy = false
+	} else if !m.lastHealthy {
+		// Health recovered
+		if m.notifyManager != nil {
+			m.notifyManager.NotifyAsync(notify.Event{
+				Type:          notify.EventHealthRecovered,
+				Severity:      notify.SeverityInfo,
+				ValidatorName: m.cfg.Validator.Name,
+				PublicIP:      m.peerSelf.IP,
+				Cluster:       m.cfg.Cluster.Name,
+			})
+		}
+		m.lastHealthy = true
 	}
 
 	return isHealthy
@@ -541,7 +700,40 @@ func (m *Manager) isNotSelfPassive() (isNotPassive bool) {
 
 // isSelfInGossip checks if the validator is in the gossip state
 func (m *Manager) isSelfInGossip() (isInGossip bool) {
-	return m.gossipState.HasIP(m.peerSelf.IP)
+	isInGossip = m.gossipState.HasIP(m.peerSelf.IP)
+
+	// Send gossip state notifications (only if state changed)
+	if !isInGossip && m.lastInGossip {
+		// Lost from gossip
+		if m.notifyManager != nil {
+			m.notifyManager.NotifyAsync(notify.Event{
+				Type:          notify.EventGossipLost,
+				Severity:      notify.SeverityError,
+				ValidatorName: m.cfg.Validator.Name,
+				PublicIP:      m.peerSelf.IP,
+				Cluster:       m.cfg.Cluster.Name,
+				Message:       "Validator is no longer visible in gossip network",
+			})
+		}
+		m.lastInGossip = false
+	} else if isInGossip && !m.lastInGossip && m.initialized {
+		// Recovered in gossip (only after initial startup)
+		if m.notifyManager != nil {
+			m.notifyManager.NotifyAsync(notify.Event{
+				Type:          notify.EventGossipRecovered,
+				Severity:      notify.SeverityInfo,
+				ValidatorName: m.cfg.Validator.Name,
+				PublicIP:      m.peerSelf.IP,
+				Cluster:       m.cfg.Cluster.Name,
+				Message:       "Validator is now visible in gossip network",
+			})
+		}
+		m.lastInGossip = true
+	} else if isInGossip {
+		m.lastInGossip = true
+	}
+
+	return isInGossip
 }
 
 // isSelfNotInGossip checks if the validator is not in the gossip state

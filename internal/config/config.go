@@ -29,6 +29,8 @@ type Config struct {
 	Prometheus Prometheus `koanf:"prometheus"`
 	// Failover is the failover decision parameters
 	Failover Failover `koanf:"failover"`
+	// Notifications is the notification configuration
+	Notifications NotificationConfig `koanf:"notifications"`
 	// File is the file that the config was loaded from
 	File string `koanf:"-"`
 	// GetPublicIPFunc is a function that returns the public IP address of the current validator
@@ -138,6 +140,11 @@ func (c *Config) Initialize() error {
 		return err
 	}
 
+	// resolve notification secrets from environment variables
+	if err := c.Notifications.ResolveSecrets(); err != nil {
+		return err
+	}
+
 	// render failover commands, args and hooks
 	err := c.Failover.RenderRoleCommands(RoleCommandTemplateData{
 		ActiveIdentityKeypairFile:  c.Validator.Identities.ActiveKeyPairFile,
@@ -180,6 +187,11 @@ func (c *Config) validate() error {
 		return err
 	}
 
+	err = c.Notifications.Validate()
+	if err != nil {
+		return err
+	}
+
 	// failover.dry_run if true print warning
 	if c.Failover.DryRun {
 		c.logger.Warn("failover.dry_run is true - failovers will dry-run commands only and be no-op")
@@ -200,4 +212,5 @@ func (c *Config) setDefaults() {
 	c.Cluster.SetDefaults()
 	c.Prometheus.SetDefaults()
 	c.Failover.SetDefaults()
+	c.Notifications.SetDefaults()
 }

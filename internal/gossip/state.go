@@ -29,6 +29,10 @@ type State struct {
 	lastActivePeer         PeerState
 	activePeerLastSeenAt   time.Time
 	LeaderlessSamplesCount int
+	// Callbacks for notification events
+	onPeerDiscovered func(name, ip, pubkey string)
+	onPeerLost       func(name, ip string)
+	onDelinquent     func(pubkey, gossipAddr string)
 }
 
 // PeerState represents the state of a peer as seen by the solana network
@@ -49,11 +53,14 @@ type PeerState struct {
 
 // Options are the options for peers state
 type Options struct {
-	ClusterRPC   *rpc.Client
-	ActivePubkey string
-	SelfIP       string
-	ConfigPeers  config.Peers
-	LogPrefix    string
+	ClusterRPC       *rpc.Client
+	ActivePubkey     string
+	SelfIP           string
+	ConfigPeers      config.Peers
+	LogPrefix        string
+	OnPeerDiscovered func(name, ip, pubkey string)
+	OnPeerLost       func(name, ip string)
+	OnDelinquent     func(pubkey, gossipAddr string)
 }
 
 // NewState creates a new gossip state
@@ -65,6 +72,9 @@ func NewState(opts Options) *State {
 		selfIP:           opts.SelfIP,
 		configPeers:      opts.ConfigPeers,
 		peerStatesByName: make(map[string]PeerState),
+		onPeerDiscovered: opts.OnPeerDiscovered,
+		onPeerLost:       opts.OnPeerLost,
+		onDelinquent:     opts.OnDelinquent,
 	}
 }
 
@@ -181,6 +191,10 @@ func (p *State) Refresh() {
 				"is_active", peerState.LastSeenActive,
 				"last_seen_at", peerState.LastSeenAtString(),
 			)
+			// Call peer discovered callback
+			if p.onPeerDiscovered != nil {
+				p.onPeerDiscovered(peerState.Name, peerState.IP, peerState.Pubkey)
+			}
 		}
 
 		// if all peers from configPeers are in the peerEntries, we can stop looking
@@ -207,6 +221,10 @@ func (p *State) Refresh() {
 		// warn if peer was in the old state but is now missing
 		if p.HasIP(ip) {
 			p.logger.Warn("peer lost", "name", name, "ip", ip)
+			// Call peer lost callback
+			if p.onPeerLost != nil {
+				p.onPeerLost(name, ip)
+			}
 			continue
 		}
 
@@ -281,6 +299,10 @@ func (p *State) isNodeActiveAndVoting(node solanagorpc.GetClusterNodesResult) bo
 			"pubkey", node.Pubkey.String(),
 			"current_slot", currentSlot,
 		)
+		// Call delinquent callback
+		if p.onDelinquent != nil {
+			p.onDelinquent(node.Pubkey.String(), *node.Gossip)
+		}
 		return false
 	}
 
